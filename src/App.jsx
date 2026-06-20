@@ -89,6 +89,58 @@ function monthLabel(offset) {
   const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + offset);
   return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
+const currentMonthStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+};
+const monthsBehindCalc = (anchorStr) => {
+  if (!anchorStr) return 0;
+  const [ay, am] = anchorStr.split("-").map(Number);
+  const n = new Date();
+  return Math.max(0, (n.getFullYear() - ay) * 12 + (n.getMonth() + 1 - am));
+};
+const labelFromStr = (s) => {
+  const [y, m] = s.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+};
+const addMonthsStr = (s, n) => {
+  const [y, m] = s.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+};
+
+// One month of the plan, given working balances. Used to apply a logged month.
+function planStep(debts, savings, p) {
+  const clean = debts
+    .map((d) => ({ ...d, balance: num(d.balance), apr: num(d.apr), min: num(d.min) }))
+    .filter((d) => d.balance > 0.005);
+  const totalMin = clean.reduce((s, d) => s + d.min, 0);
+  const surplus = Math.max(0, p.income - p.expenses - totalMin);
+  const extra = (surplus * p.split) / 100;
+  const save = surplus - extra;
+  const order = reconcileOrder(p.customOrder, clean);
+  const s = simulate(clean, extra, p.strategy, p.blendW, order, savings, p.savApy, save, p.savTarget);
+  return { row: s.rows[0] || null, plannedSave: save };
+}
+function applyPlanned(debts, savings, p) {
+  const { row } = planStep(debts, savings, p);
+  if (!row) return { debts, savings };
+  return {
+    debts: debts.map((d) => (row.remain[d.id] !== undefined ? { ...d, balance: row.remain[d.id] } : { ...d, balance: num(d.balance) })),
+    savings: row.savings,
+  };
+}
+function applyActual(debts, savings, pays, saved) {
+  return {
+    debts: debts.map((d) => {
+      const bal = num(d.balance);
+      if (bal <= 0.005) return d;
+      const interest = (bal * num(d.apr)) / 100 / 12;
+      return { ...d, balance: Math.max(0, bal + interest - num(pays[d.id])) };
+    }),
+    savings: savings + num(saved),
+  };
+}
 
 /* ─────────────────────────  small pieces  ───────────────────────── */
 function Field({ label, value, onChange, type = "number", prefix, suffix, placeholder }) {
@@ -201,6 +253,90 @@ const EXAMPLE_DEBTS = [
   { id: "sl", name: "Student loan", type: "student loan", balance: 18500, apr: 5.5, min: 190, due: 22 },
 ];
 
+/* ─────────────────────────  monthly check-in  ───────────────────────── */
+function Reconcile({ months, debts0, savings0, params, onComplete, onClose }) {
+  const [workDebts, setWorkDebts] = useState(debts0);
+  const [workSav, setWorkSav] = useState(savings0);
+  const [idx, setIdx] = useState(0);
+  const [mode, setMode] = useState("ask");
+  const [pays, setPays] = useState({});
+  const [saved, setSaved] = useState("");
+  const total = months.length;
+  const { row, plannedSave } = planStep(workDebts, workSav, params);
+  const visible = workDebts.filter((d) => num(d.balance) > 0.005);
+
+  const advance = (nd, ns) => {
+    if (idx + 1 < total) { setWorkDebts(nd); setWorkSav(ns); setIdx(idx + 1); setMode("ask"); }
+    else onComplete(nd, ns);
+  };
+  const confirmPlanned = () => { const r = applyPlanned(workDebts, workSav, params); advance(r.debts, r.savings); };
+  const confirmActual = () => { const r = applyActual(workDebts, workSav, pays, saved); advance(r.debts, r.savings); };
+  const enterAdjust = () => {
+    const init = {}; visible.forEach((d) => { init[d.id] = Math.round(row?.pay[d.id] || 0); });
+    setPays(init); setSaved(Math.round(plannedSave)); setMode("adjust");
+  };
+  const allPlanned = () => {
+    let d = workDebts, s = workSav;
+    for (let i = idx; i < total; i++) { const r = applyPlanned(d, s, params); d = r.debts; s = r.savings; }
+    onComplete(d, s);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(74,44,61,0.35)" }}>
+      <div className="w-full max-w-md rounded-3xl p-7 overflow-y-auto" style={{ background: C.card, border: `1px solid ${C.border}`, boxShadow: "0 28px 70px -30px rgba(232,124,166,0.7)", maxHeight: "90vh" }}>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2" style={{ color: C.pink }}>
+            <CalendarHeart size={18} /><span className="text-xs font-bold uppercase" style={{ letterSpacing: "0.08em" }}>monthly check-in</span>
+          </div>
+          {total > 1 && <span className="text-xs font-extrabold" style={{ color: C.inkFaint }}>{idx + 1} of {total}</span>}
+        </div>
+        <h2 style={{ fontFamily: "'Fraunces', serif", color: C.ink }} className="text-2xl font-semibold mb-2">let's close out {months[idx]}</h2>
+
+        {visible.length === 0 ? (
+          <>
+            <p className="text-sm font-semibold mb-5" style={{ color: C.sage }}>you're debt-free — there's nothing left to log. amazing.</p>
+            <button onClick={() => onComplete(workDebts, workSav)} className="w-full rounded-2xl py-3.5 font-extrabold" style={{ background: C.pink, color: C.card }}>done</button>
+          </>
+        ) : mode === "ask" ? (
+          <>
+            <p className="text-sm font-semibold mb-4" style={{ color: C.inkSoft }}>here's what your plan suggested for this month. did it go that way? totally your call — there's no wrong answer.</p>
+            <div className="rounded-2xl p-4 mb-5" style={{ background: C.blush2, border: `1px solid ${C.borderSoft}` }}>
+              {visible.map((d) => (
+                <div key={d.id} className="flex items-center justify-between py-1">
+                  <span className="font-bold text-sm">{d.name}</span>
+                  <span className="font-extrabold text-sm" style={{ color: C.ink }}>{money(row?.pay[d.id] || 0)}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between py-1 mt-1" style={{ borderTop: `1px solid ${C.borderSoft}` }}>
+                <span className="font-bold text-sm" style={{ color: C.sage }}>to savings</span>
+                <span className="font-extrabold text-sm" style={{ color: C.sage }}>{money(plannedSave)}</span>
+              </div>
+            </div>
+            <button onClick={confirmPlanned} className="w-full rounded-2xl py-3.5 font-extrabold text-base mb-3" style={{ background: C.pink, color: C.card, boxShadow: "0 14px 30px -12px rgba(232,124,166,.7)" }}>yes, that's what happened</button>
+            <button onClick={enterAdjust} className="w-full rounded-2xl py-3 font-extrabold text-sm mb-4" style={{ background: C.blush, color: C.pink, border: `1.5px solid ${C.border}` }}>not exactly — I'll enter the real numbers</button>
+            <div className="flex items-center justify-between">
+              <button onClick={onClose} className="text-sm font-bold" style={{ color: C.inkFaint }}>I'll do this later</button>
+              {total > 1 && <button onClick={allPlanned} className="text-sm font-extrabold" style={{ color: C.pink }}>all {total} went as planned →</button>}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold mb-4" style={{ color: C.inkSoft }}>no problem — just tell me what actually happened. edit anything; the rest carries over.</p>
+            <div className="space-y-3 mb-4">
+              {visible.map((d) => (
+                <Field key={d.id} label={`paid to ${d.name}`} value={pays[d.id] ?? ""} prefix="$" onChange={(v) => setPays((p) => ({ ...p, [d.id]: v }))} />
+              ))}
+              <Field label="added to savings" value={saved} prefix="$" onChange={setSaved} />
+            </div>
+            <button onClick={confirmActual} className="w-full rounded-2xl py-3.5 font-extrabold text-base mb-3" style={{ background: C.pink, color: C.card, boxShadow: "0 14px 30px -12px rgba(232,124,166,.7)" }}>save &amp; continue</button>
+            <button onClick={() => setMode("ask")} className="w-full text-sm font-bold" style={{ color: C.inkFaint }}>← back</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────────────  app  ───────────────────────── */
 export default function App() {
   // auth + sync
@@ -211,6 +347,8 @@ export default function App() {
   const [showIntro, setShowIntro] = useState(false);
   const [view, setView] = useState("plan");
   const ready = useRef(false); // true once data is loaded, so edits start auto-saving
+  const [planMonth, setPlanMonth] = useState(null);   // first month not yet logged (YYYY-MM-01)
+  const [reconcileOpen, setReconcileOpen] = useState(false);
 
   // money inputs
   const [payAmount, setPayAmount] = useState(1700);
@@ -312,6 +450,7 @@ export default function App() {
     await db.signOut();
     ready.current = false;
     setHasSetup(false); setShowIntro(false); setView("plan");
+    setPlanMonth(null); setReconcileOpen(false);
     setPayAmount(1700); setPayFreq("biweekly");
     setExpenses(EXAMPLE_EXPENSES); setDebts(EXAMPLE_DEBTS);
     setCustomOrder(EXAMPLE_DEBTS.map((d) => d.id));
@@ -344,6 +483,9 @@ export default function App() {
           setCustomOrder(Array.isArray(profile.custom_order) ? profile.custom_order : []);
           setDebts(dbDebts.map((d) => ({ id: d.id, name: d.name, type: d.type, balance: d.balance, apr: d.apr, min: d.min, due: d.due })));
           setExpenses(dbExpenses.map((e) => ({ id: e.id, name: e.name, amount: e.amount })));
+          const pm = profile.plan_month || currentMonthStr();
+          setPlanMonth(pm);
+          setReconcileOpen(monthsBehindCalc(pm) >= 1);
           setHasSetup(true); setShowIntro(false); setView("plan");
         } else {
           // brand-new account → start from the example so onboarding makes sense
@@ -369,13 +511,23 @@ export default function App() {
       db.saveProfile(uid, {
         pay_amount: num(payAmount), pay_freq: payFreq,
         sav_current: num(savCurrent), sav_target: num(savTarget), sav_apy: num(savApy),
-        strategy, split, blend_w: blendW, custom_order: customOrder, has_setup: hasSetup,
+        strategy, split, blend_w: blendW, custom_order: customOrder, has_setup: hasSetup, plan_month: planMonth,
       }).catch((e) => console.error("save profile failed:", e));
       db.saveDebts(uid, debts).catch((e) => console.error("save debts failed:", e));
       db.saveExpenses(uid, expenses).catch((e) => console.error("save expenses failed:", e));
     }, 800);
     return () => clearTimeout(t);
-  }, [session, payAmount, payFreq, savCurrent, savTarget, savApy, strategy, split, blendW, customOrder, hasSetup, debts, expenses]);
+  }, [session, payAmount, payFreq, savCurrent, savTarget, savApy, strategy, split, blendW, customOrder, hasSetup, debts, expenses, planMonth]);
+
+  // applying a finished check-in: balances/savings move forward, anchor catches up to now
+  const finishReconcile = (nd, ns) => {
+    setDebts(nd);
+    setSavCurrent(Math.round(ns * 100) / 100);
+    setPlanMonth(currentMonthStr());
+    setReconcileOpen(false);
+  };
+  const monthsBehind = monthsBehindCalc(planMonth);
+  const monthsToLog = Array.from({ length: monthsBehind }, (_, i) => labelFromStr(addMonthsStr(planMonth, i)));
 
   return (
     <div style={{ background: `linear-gradient(160deg, ${C.bg1} 0%, ${C.bg2} 45%, ${C.bg3} 100%)`, fontFamily: "'Nunito', sans-serif", color: C.ink, minHeight: "100%" }} className="w-full">
@@ -507,7 +659,7 @@ export default function App() {
                 </div>
               </div>
 
-              <button onClick={() => { setHasSetup(true); setView("plan"); }} className="w-full rounded-2xl py-4 font-extrabold text-base" style={{ background: C.pink, color: C.card, boxShadow: "0 14px 30px -12px rgba(232,124,166,.7)" }}>see my plan →</button>
+              <button onClick={() => { setHasSetup(true); setPlanMonth(currentMonthStr()); setView("plan"); }} className="w-full rounded-2xl py-4 font-extrabold text-base" style={{ background: C.pink, color: C.card, boxShadow: "0 14px 30px -12px rgba(232,124,166,.7)" }}>see my plan →</button>
             </>
           )}
 
@@ -523,6 +675,16 @@ export default function App() {
 
           {view === "plan" && hasDebts && (
             <>
+              {monthsBehind >= 1 && (
+                <button onClick={() => setReconcileOpen(true)} className="w-full text-left rounded-3xl p-5 mb-5 flex items-center justify-between gap-3" style={{ background: `linear-gradient(135deg, ${C.blush} 0%, ${C.sageFaint} 100%)`, border: `1px solid ${C.border}` }}>
+                  <div>
+                    <div className="font-extrabold mb-0.5" style={{ color: C.pink }}>ready to close out {labelFromStr(planMonth)}?</div>
+                    <p className="text-sm font-semibold" style={{ color: C.inkSoft }}>{monthsBehind > 1 ? `it's been ${monthsBehind} months — let's catch your plan up, one at a time.` : "a quick check-in keeps your debt-free date honest. takes a few seconds."}</p>
+                  </div>
+                  <span className="rounded-full px-4 py-2 font-extrabold text-sm whitespace-nowrap" style={{ background: C.pink, color: C.card }}>log it</span>
+                </button>
+              )}
+
               {rawSurplus <= 0 && (
                 <div className="rounded-3xl p-5 mb-5" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
                   <div className="font-extrabold mb-1" style={{ color: C.amber }}>no extra room right now — and that's okay.</div>
@@ -725,6 +887,17 @@ export default function App() {
             </>
           )}
         </div>
+      )}
+
+      {session && !loading && hasSetup && reconcileOpen && monthsBehind >= 1 && (
+        <Reconcile
+          months={monthsToLog}
+          debts0={debts}
+          savings0={num(savCurrent)}
+          params={{ income: monthlyIncome, expenses: totalExpenses, split, strategy, blendW, customOrder, savApy: num(savApy), savTarget: num(savTarget) }}
+          onComplete={finishReconcile}
+          onClose={() => setReconcileOpen(false)}
+        />
       )}
     </div>
   );

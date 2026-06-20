@@ -16,6 +16,7 @@ create table if not exists public.profiles (
   blend_w      int      default 50,
   custom_order jsonb    default '[]'::jsonb,
   has_setup    boolean  default false,
+  plan_month   date,
   updated_at   timestamptz default now()
 );
 
