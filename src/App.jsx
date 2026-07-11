@@ -543,7 +543,7 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [session]);
+  }, [session?.user?.id]); // only re-run on a real sign-in/out, not on background token refreshes
 
   /* ── auto-save edits (debounced) once data has loaded, plus an immediate flush on tab hide/close ── */
   const latest = useRef(null);
