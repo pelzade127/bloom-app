@@ -42,7 +42,11 @@ export async function loadExpenses(userId) {
   return data || [];
 }
 
-/* ── save ── */
+/* ── save ──
+   Debts/expenses use upsert (insert-or-update), which never touches rows it
+   isn't given — so two saves overlapping (e.g. a debounced save and a
+   leave-the-tab save firing close together) can never wipe data. Removing a
+   single item is a separate, explicit delete fired the moment it happens. */
 export async function saveProfile(userId, fields) {
   const { error } = await supabase
     .from("profiles")
@@ -50,23 +54,26 @@ export async function saveProfile(userId, fields) {
     .eq("user_id", userId);
   if (error) throw error;
 }
-// Small datasets, so replace-in-place keeps the DB exactly in sync with the screen.
-export async function saveDebts(userId, debts) {
-  const del = await supabase.from("debts").delete().eq("user_id", userId);
-  if (del.error) throw del.error;
+export async function upsertDebts(userId, debts) {
   if (!debts.length) return;
   const rows = debts.map((d) => ({
     user_id: userId, id: d.id, name: d.name, type: d.type,
     balance: num(d.balance), apr: num(d.apr), min: num(d.min), due: parseInt(d.due) || 1,
   }));
-  const { error } = await supabase.from("debts").insert(rows);
+  const { error } = await supabase.from("debts").upsert(rows, { onConflict: "user_id,id" });
   if (error) throw error;
 }
-export async function saveExpenses(userId, expenses) {
-  const del = await supabase.from("expenses").delete().eq("user_id", userId);
-  if (del.error) throw del.error;
+export async function deleteDebt(userId, id) {
+  const { error } = await supabase.from("debts").delete().eq("user_id", userId).eq("id", id);
+  if (error) throw error;
+}
+export async function upsertExpenses(userId, expenses) {
   if (!expenses.length) return;
   const rows = expenses.map((e) => ({ user_id: userId, id: e.id, name: e.name, amount: num(e.amount) }));
-  const { error } = await supabase.from("expenses").insert(rows);
+  const { error } = await supabase.from("expenses").upsert(rows, { onConflict: "user_id,id" });
+  if (error) throw error;
+}
+export async function deleteExpense(userId, id) {
+  const { error } = await supabase.from("expenses").delete().eq("user_id", userId).eq("id", id);
   if (error) throw error;
 }

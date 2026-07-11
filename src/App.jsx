@@ -369,10 +369,16 @@ export default function App() {
   // editors
   const updateDebt = (id, f, v) => setDebts((ds) => ds.map((d) => (d.id === id ? { ...d, [f]: v } : d)));
   const addDebt = () => setDebts((ds) => [...ds, { id: "d" + Date.now(), name: "new debt", type: "credit card", balance: "", apr: "", min: "", due: 1 }]);
-  const removeDebt = (id) => setDebts((ds) => ds.filter((d) => d.id !== id));
+  const removeDebt = (id) => {
+    setDebts((ds) => ds.filter((d) => d.id !== id));
+    if (session) db.deleteDebt(session.user.id, id).catch((e) => console.error("delete debt failed:", e));
+  };
   const updateExpense = (id, f, v) => setExpenses((es) => es.map((e) => (e.id === id ? { ...e, [f]: v } : e)));
   const addExpense = () => setExpenses((es) => [...es, { id: "e" + Date.now(), name: "new expense", amount: "" }]);
-  const removeExpense = (id) => setExpenses((es) => es.filter((e) => e.id !== id));
+  const removeExpense = (id) => {
+    setExpenses((es) => es.filter((e) => e.id !== id));
+    if (session) db.deleteExpense(session.user.id, id).catch((e) => console.error("delete expense failed:", e));
+  };
 
   // derived money
   const monthlyIncome = useMemo(() => {
@@ -516,8 +522,8 @@ export default function App() {
       strategy: s.strategy, split: s.split, blend_w: s.blendW, custom_order: s.customOrder,
       has_setup: s.hasSetup, plan_month: s.planMonth,
     }).catch((e) => console.error("save profile failed:", e));
-    db.saveDebts(uid, s.debts).catch((e) => console.error("save debts failed:", e));
-    db.saveExpenses(uid, s.expenses).catch((e) => console.error("save expenses failed:", e));
+    db.upsertDebts(uid, s.debts).catch((e) => console.error("save debts failed:", e));
+    db.upsertExpenses(uid, s.expenses).catch((e) => console.error("save expenses failed:", e));
   };
 
   useEffect(() => {
