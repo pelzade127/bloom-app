@@ -168,7 +168,7 @@ function Stat({ icon, label, value, accent }) {
 }
 
 function Welcome({ onAuth }) {
-  const [mode, setMode] = useState("create");
+  const [mode, setMode] = useState("signin"); // returning users are the common case
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
@@ -178,7 +178,14 @@ function Welcome({ onAuth }) {
     setError(""); setBusy(true);
     const msg = await onAuth(mode, email.trim(), pw);
     setBusy(false);
-    if (msg) setError(msg);
+    if (msg) {
+      if (mode === "create" && /already registered|already exists/i.test(msg)) {
+        setMode("signin");
+        setError("looks like you already have an account — enter your password and tap sign in.");
+      } else {
+        setError(msg);
+      }
+    }
   };
   return (
     <div className="flex items-center justify-center px-5 py-16" style={{ minHeight: "100vh" }}>
