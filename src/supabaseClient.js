@@ -10,4 +10,10 @@ if (!url || !key) {
   );
 }
 
-export const supabase = createClient(url, key);
+export const supabase = createClient(url, key, {
+  auth: {
+    persistSession: true,   // keep the session in localStorage across closes/reopens
+    autoRefreshToken: true, // silently renew it so it doesn't expire while the app is closed
+    storage: window.localStorage,
+  },
+});
