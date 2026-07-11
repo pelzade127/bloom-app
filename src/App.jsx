@@ -378,7 +378,20 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [hasSetup, setHasSetup] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
-  const [view, setView] = useState("plan");
+  const [view, setViewRaw] = useState("plan");
+  // remember which page she was on so a full app restart (common on phones when
+  // a backgrounded PWA gets killed to save memory) can restore it, instead of
+  // always dropping her back on "my plan"
+  const setView = (v) => {
+    setViewRaw(v);
+    try { localStorage.setItem("bloom-last-view", v); } catch { /* ignore */ }
+  };
+  const getSavedView = () => {
+    try {
+      const v = localStorage.getItem("bloom-last-view");
+      return v === "setup" || v === "plan" ? v : null;
+    } catch { return null; }
+  };
   const ready = useRef(false); // true once data is loaded, so edits start auto-saving
   const [planMonth, setPlanMonth] = useState(null);   // first month not yet logged (YYYY-MM-01)
   const [reconcileOpen, setReconcileOpen] = useState(false);
@@ -487,6 +500,7 @@ export default function App() {
   };
   const handleSignOut = async () => {
     await db.signOut();
+    try { localStorage.removeItem("bloom-last-view"); } catch { /* ignore */ }
     ready.current = false;
     setHasSetup(false); setShowIntro(false); setView("plan");
     setPlanMonth(null); setReconcileOpen(false);
@@ -528,7 +542,7 @@ export default function App() {
           const pm = profile.plan_month || currentMonthStr();
           setPlanMonth(pm);
           setReconcileOpen(monthsBehindCalc(pm) >= 1);
-          setHasSetup(true); setShowIntro(false); setView("plan");
+          setHasSetup(true); setShowIntro(false); setView(getSavedView() || "plan");
         } else {
           // truly brand-new account, nothing saved yet → start from the example so onboarding makes sense
           setDebts(EXAMPLE_DEBTS); setExpenses(EXAMPLE_EXPENSES);
