@@ -476,11 +476,12 @@ export default function App() {
         const profile = await db.loadProfile(uid);
         const [dbDebts, dbExpenses] = await Promise.all([db.loadDebts(uid), db.loadExpenses(uid)]);
         if (cancelled) return;
-        if (profile.has_setup) {
+        const engaged = profile.has_setup || dbDebts.length > 0 || dbExpenses.length > 0;
+        if (engaged) {
           setPayAmount(profile.pay_amount); setPayFreq(profile.pay_freq);
           setSavCurrent(profile.sav_current); setSavTarget(profile.sav_target); setSavApy(profile.sav_apy);
           setStrategy(profile.strategy); setSplit(profile.split); setBlendW(profile.blend_w);
-          setCustomOrder(Array.isArray(profile.custom_order) ? profile.custom_order : []);
+          setCustomOrder(Array.isArray(profile.custom_order) && profile.custom_order.length ? profile.custom_order : dbDebts.map((d) => d.id));
           setDebts(dbDebts.map((d) => ({ id: d.id, name: d.name, type: d.type, balance: d.balance, apr: d.apr, min: d.min, due: d.due })));
           setExpenses(dbExpenses.map((e) => ({ id: e.id, name: e.name, amount: e.amount })));
           const pm = profile.plan_month || currentMonthStr();
@@ -488,7 +489,7 @@ export default function App() {
           setReconcileOpen(monthsBehindCalc(pm) >= 1);
           setHasSetup(true); setShowIntro(false); setView("plan");
         } else {
-          // brand-new account → start from the example so onboarding makes sense
+          // truly brand-new account, nothing saved yet → start from the example so onboarding makes sense
           setDebts(EXAMPLE_DEBTS); setExpenses(EXAMPLE_EXPENSES);
           setCustomOrder(EXAMPLE_DEBTS.map((d) => d.id));
           setHasSetup(false); setShowIntro(true); setView("setup");
@@ -503,21 +504,42 @@ export default function App() {
     return () => { cancelled = true; };
   }, [session]);
 
-  /* ── auto-save edits (debounced) once data has loaded ── */
+  /* ── auto-save edits (debounced) once data has loaded, plus an immediate flush on tab hide/close ── */
+  const latest = useRef(null);
+  latest.current = { payAmount, payFreq, savCurrent, savTarget, savApy, strategy, split, blendW, customOrder, hasSetup, planMonth, debts, expenses };
+
+  const flushSave = (uid) => {
+    const s = latest.current;
+    db.saveProfile(uid, {
+      pay_amount: num(s.payAmount), pay_freq: s.payFreq,
+      sav_current: num(s.savCurrent), sav_target: num(s.savTarget), sav_apy: num(s.savApy),
+      strategy: s.strategy, split: s.split, blend_w: s.blendW, custom_order: s.customOrder,
+      has_setup: s.hasSetup, plan_month: s.planMonth,
+    }).catch((e) => console.error("save profile failed:", e));
+    db.saveDebts(uid, s.debts).catch((e) => console.error("save debts failed:", e));
+    db.saveExpenses(uid, s.expenses).catch((e) => console.error("save expenses failed:", e));
+  };
+
   useEffect(() => {
     if (!session || !ready.current) return;
     const uid = session.user.id;
-    const t = setTimeout(() => {
-      db.saveProfile(uid, {
-        pay_amount: num(payAmount), pay_freq: payFreq,
-        sav_current: num(savCurrent), sav_target: num(savTarget), sav_apy: num(savApy),
-        strategy, split, blend_w: blendW, custom_order: customOrder, has_setup: hasSetup, plan_month: planMonth,
-      }).catch((e) => console.error("save profile failed:", e));
-      db.saveDebts(uid, debts).catch((e) => console.error("save debts failed:", e));
-      db.saveExpenses(uid, expenses).catch((e) => console.error("save expenses failed:", e));
-    }, 800);
+    const t = setTimeout(() => flushSave(uid), 800);
     return () => clearTimeout(t);
   }, [session, payAmount, payFreq, savCurrent, savTarget, savApy, strategy, split, blendW, customOrder, hasSetup, debts, expenses, planMonth]);
+
+  // don't lose an in-flight edit if she switches apps, closes the tab, or the phone locks
+  useEffect(() => {
+    if (!session) return;
+    const uid = session.user.id;
+    const onHide = () => { if (ready.current && document.visibilityState === "hidden") flushSave(uid); };
+    const onPageHide = () => { if (ready.current) flushSave(uid); };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, [session]);
 
   // applying a finished check-in: balances/savings move forward, anchor catches up to now
   const finishReconcile = (nd, ns) => {
@@ -546,7 +568,7 @@ export default function App() {
         </div>
       )}
 
-      {session && !loading && showIntro && <Intro onContinue={() => { setShowIntro(false); setView("setup"); }} />}
+      {session && !loading && showIntro && <Intro onContinue={() => { setShowIntro(false); setHasSetup(true); setView("setup"); }} />}
 
       {session && !loading && !showIntro && (
         <div className="max-w-5xl mx-auto px-5 py-8">
