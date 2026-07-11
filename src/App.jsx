@@ -344,6 +344,32 @@ function Reconcile({ months, debts0, savings0, params, onComplete, onClose }) {
   );
 }
 
+/* ─────────────────────────  error boundary ─────────────────────────
+   If a page ever fails to render, show the real reason on screen instead
+   of silently going blank, so it can actually be diagnosed and fixed. */
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("Bloom crashed while rendering:", error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="rounded-3xl p-6 mb-5" style={{ background: C.amberSoft, border: `1px solid ${C.amber}` }}>
+          <div className="font-extrabold mb-1" style={{ color: C.amber }}>something went wrong showing this page</div>
+          <p className="text-sm font-semibold mb-2" style={{ color: C.ink }}>
+            this isn't your fault — screenshot this and it can be fixed:
+          </p>
+          <pre className="rounded-2xl p-3 text-xs font-mono overflow-x-auto" style={{ background: C.card, color: C.ink, whiteSpace: "pre-wrap" }}>
+            {String((this.state.error && this.state.error.message) || this.state.error)}
+          </pre>
+          <button onClick={() => this.setState({ error: null })} className="mt-3 rounded-2xl px-4 py-2 font-extrabold text-sm" style={{ background: C.pink, color: C.card }}>try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 /* ─────────────────────────  app  ───────────────────────── */
 export default function App() {
   // auth + sync
@@ -473,7 +499,9 @@ export default function App() {
 
   /* ── keep track of who's signed in ── */
   useEffect(() => {
-    db.getSession().then((s) => { setSession(s); setAuthReady(true); });
+    db.getSession()
+      .then((s) => { setSession(s); setAuthReady(true); })
+      .catch((e) => { console.error("session check failed:", e); setAuthReady(true); }); // never leave the app stuck loading forever
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -573,7 +601,7 @@ export default function App() {
         select{ -webkit-appearance:none; appearance:none; }
       `}</style>
 
-      {authReady && !session && <Welcome onAuth={handleAuth} />}
+      {authReady && !session && <ErrorBoundary><Welcome onAuth={handleAuth} /></ErrorBoundary>}
 
       {session && loading && (
         <div className="flex items-center justify-center" style={{ minHeight: "100vh" }}>
@@ -699,6 +727,7 @@ export default function App() {
           )}
 
           {/* ───────────── PLAN / DASHBOARD ───────────── */}
+          <ErrorBoundary>
           {view === "plan" && !hasDebts && (
             <div className="rounded-3xl p-10 text-center" style={{ background: C.card, border: `1px solid ${C.border}` }}>
               <div className="inline-flex rounded-2xl p-3 mb-4" style={{ background: C.blush }}><Sparkles size={24} color={C.pink} /></div>
@@ -921,6 +950,7 @@ export default function App() {
               </p>
             </>
           )}
+          </ErrorBoundary>
         </div>
       )}
 
