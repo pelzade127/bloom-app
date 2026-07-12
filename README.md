@@ -1,121 +1,129 @@
-# Bloom — debt-freedom co-pilot
+<div align="center">
 
-A calm, pastel, month-by-month plan for paying off debt while growing savings.
-Built with React + Vite + Tailwind, and set up as an installable PWA so it can live
-on a phone home screen and open full-screen like a native app.
+# 🌸 Bloom
 
----
+### A calm, pastel debt-payoff & savings co-pilot
 
-## Run it on your computer
+Bloom turns a pile of debts, bills, and goals into one clear, month-by-month plan — with a real debt-free date that moves as life happens. Built to feel supportive and non-shaming: a financial co-pilot, not a budgeting punishment tool.
 
-You need [Node.js](https://nodejs.org) (LTS version) installed. Then, inside this folder:
+[**Live app →**](https://bloom-app-topaz.vercel.app)
 
-```bash
-npm install      # one time — downloads dependencies
-npm run dev      # start the local dev server
-```
+![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-5-646CFF?style=flat-square&logo=vite&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-Postgres_+_Auth-3FCF8E?style=flat-square&logo=supabase&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8?style=flat-square&logo=pwa&logoColor=white)
+![Vercel](https://img.shields.io/badge/Deployed_on-Vercel-000000?style=flat-square&logo=vercel&logoColor=white)
 
-Open the URL it prints (usually http://localhost:5173). Edits save live.
-
-```bash
-npm run build    # build the production site into the dist/ folder
-npm run preview  # preview that production build locally
-```
-
-> The "Add to Home Screen" / install behavior only works on the **built** site
-> (the deployed site, or `npm run preview`) — not in `npm run dev`. That's normal.
+</div>
 
 ---
 
-## Put it online (free) with GitHub + Vercel
+## About
 
-### Step 1 — Push the code to GitHub
+Most budgeting apps tell you what you did wrong. Bloom is built around the one thing that actually keeps people going: a visible finish line. Enter your income, bills, debts, and savings goals once, and Bloom computes an exact plan — what to pay, when, which debt gets the extra money, how much interest you'll save, and your projected debt-free date. Savings grow on the same timeline, so paying down debt and building a cushion stop feeling like a tradeoff you have to guess at.
 
-Run these once, inside this folder:
+It's built to bend with real life: switch strategies anytime, blend two strategies together, reorder priorities, or check in each month on what actually happened versus what was planned — no spreadsheets, no shame.
 
-```bash
-git init
-git add .
-git commit -m "Initial commit: Bloom"
+<!-- Add a screenshot to make the repo shine:
+1. Take a screenshot of the dashboard
+2. Save it as docs/screenshot.png
+3. Uncomment the line below
+-->
+<!-- ![Bloom dashboard](docs/screenshot.png) -->
+
+## Features
+
+**Payoff engine**
+- Six strategies on one shared simulation engine — debt snowball, avalanche, cash-flow (highest minimum first), interest-cost (most expensive debt first), a tunable snowball↔avalanche **blend**, and a fully custom order.
+- Month-by-month schedule — exactly what to pay on each debt, every month, with running balances and payoff milestones.
+- Side-by-side strategy comparison with clear "least interest" and "fastest" markers.
+- One slider splits your monthly surplus between extra debt payments and savings, with debt and savings plotted on the same timeline.
+
+**Staying accurate over time**
+- **Monthly check-in** — the first time you open the app in a new month, Bloom asks "did this go as planned?" One tap applies the plan, or you can enter what actually happened (per debt, plus savings) and it updates from there.
+- Fell behind by a few months? It walks through each one in order, with a shortcut to fast-forward through months that went exactly as planned.
+- A gentle "no room right now, and that's okay" state instead of an error when the numbers are tight.
+
+**Built to actually hold up**
+- Accounts with email/password sign-in; every edit auto-saves and syncs across devices.
+- Installable as a PWA — add it to a phone home screen and it opens full-screen, no browser chrome.
+- Self-updating in the background with no disruptive reloads, and an on-screen fallback if a page ever fails to render, so nothing fails silently.
+
+## Tech stack
+
+| Layer | Choice |
+| --- | --- |
+| Frontend | React 18 + Vite |
+| Styling | Tailwind CSS, custom pastel design system |
+| Charts | Recharts |
+| Icons | Lucide |
+| Backend | Supabase (PostgreSQL + Auth) |
+| Security | Postgres Row Level Security |
+| Hosting | Vercel (frontend), Supabase (database) |
+| Offline / install | vite-plugin-pwa (Workbox service worker) |
+
+## How it works
+
+**The payoff math** lives in a single pure, deterministic engine: a monthly simulation that accrues interest, pays minimums, then routes the remaining budget to one target debt according to the chosen strategy — rolling each cleared debt's freed-up payment into the next (the "snowball" effect). Because it's a pure function of its inputs, the UI can re-run it on every keystroke for instant what-if feedback.
+
+**Persistence is frontend-direct to Supabase** — no separate API server to host. Each user's income, debts, expenses, and plan settings live in Postgres behind Row Level Security, so a signed-in user can only ever read or write their own rows. Debts and expenses save via `upsert` (never a destructive delete-and-replace), so overlapping saves can't wipe data; removing an item is its own explicit action.
+
+```
+React app ──► Supabase Auth (email/password)
+          └─► Supabase Postgres (RLS-protected)  ◄── one row-set per user
+   │
+   └─ payoff engine (pure function, runs in the browser)
 ```
 
-Then create a new **empty** repository on github.com (don't add a README or
-.gitignore — this project already has them). Copy its URL and run:
+## Getting started
+
+**Prerequisites:** [Node.js](https://nodejs.org) (LTS).
 
 ```bash
-git remote add origin https://github.com/YOUR-USERNAME/bloom-app.git
-git branch -M main
-git push -u origin main
+git clone https://github.com/pelzade127/bloom-app.git
+cd bloom-app
+npm install
 ```
 
-### Step 2 — Deploy on Vercel
+**Connect a free Supabase project:**
 
-1. Go to [vercel.com](https://vercel.com) and sign in with GitHub (the free "Hobby" plan is plenty).
-2. Click **Add New → Project** and import your `bloom-app` repo.
-3. Vercel auto-detects Vite — build command `npm run build`, output `dist`. Leave the defaults and click **Deploy**.
-4. In about a minute you get a live URL like `https://bloom-app.vercel.app`.
+1. Create a project at [supabase.com](https://supabase.com) — no card required.
+2. In **SQL Editor**, run [`supabase-schema.sql`](supabase-schema.sql) to create the tables and security policies.
+   *(Upgrading an existing database? Also run [`supabase-migration-add-plan-month.sql`](supabase-migration-add-plan-month.sql).)*
+3. *(Optional, for frictionless sign-up)* Under **Authentication → Sign In / Providers → Email**, turn off **Confirm email**.
+4. Grab your **Project URL** and **anon/publishable key** from the project's **Connect** dialog (or **Settings → API Keys**).
+5. Copy `.env.example` to `.env` and fill in:
 
-That's it. From now on, **every push to GitHub auto-deploys the new version.**
+```env
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-or-publishable-key
+```
 
-### Every time you make a change after that
-
-This is the rhythm to remember — three commands, in order:
+**Run it:**
 
 ```bash
-git add .
-git commit -m "what you changed"
-git push
+npm run dev      # local dev server
+npm run build    # production build
+npm run preview  # preview the production build (PWA install works here)
 ```
 
-Or as a single line you can reuse:
+## Deployment
 
-```bash
-git add . && git commit -m "what you changed" && git push
-```
+Deployed on Vercel from GitHub: import the repo, add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` under **Settings → Environment Variables**, and deploy. Every push to `main` redeploys automatically.
 
-Vercel picks it up and updates the live site automatically.
+## Roadmap
 
----
+- Payment reminders near due dates
+- Promo / intro-APR handling
+- Multiple savings goals with target dates
+- Biweekly-paycheck calendar accuracy
+- Saved "what-if" scenarios
 
-## Install it on a phone (or laptop)
+## A note
 
-Open the live Vercel URL, then:
+Bloom shows projections based on the numbers you enter. It's a planning companion, not financial advice — real interest and dates may vary.
 
-- **iPhone (Safari):** tap the Share button → **Add to Home Screen**.
-- **Android (Chrome):** tap the ⋮ menu → **Install app** (or accept the install prompt).
-- **Desktop (Chrome/Edge):** click the install icon in the address bar.
+## License
 
-It opens full-screen with the Bloom heart icon — no browser bars.
-
----
-
-## Connect the backend (free, with Supabase)
-
-The app saves each person's income, debts, expenses, and plan to a free Supabase
-database, behind email/password sign-in. Do this once:
-
-1. **Create a project.** Go to [supabase.com](https://supabase.com), sign up (free, no card),
-   and create a new project. Pick any database password and region. Wait ~2 minutes for it to spin up.
-   *(Free projects pause after 7 days of no use; if that happens, one click in the dashboard wakes it — your data is safe.)*
-
-2. **Turn off email confirmation** (so sign-up logs your friend in immediately, no inbox step):
-   **Authentication → Sign In / Providers → Email**, and switch off **Confirm email**. Save.
-
-3. **Create the tables.** Open **SQL Editor → New query**, paste the entire contents of
-   `supabase-schema.sql` (in this folder), and click **Run**. You should see "Success."
-
-4. **Get your two keys.** Go to **Project Settings → API** and copy the **Project URL**
-   and the **anon / public** key. (The anon key is meant to live in the browser — row-level
-   security is what actually protects the data.)
-
-5. **Tell the app about them, in two places:**
-   - **Locally:** copy `.env.example` to a new file named `.env` and paste your two values in.
-   - **On Vercel:** Project → **Settings → Environment Variables**, add `VITE_SUPABASE_URL`
-     and `VITE_SUPABASE_ANON_KEY` with the same values, then **redeploy** (Deployments → ⋯ → Redeploy).
-
-6. **Run it:** `npm install` then `npm run dev`. Create an account on the welcome screen and
-   you're in. Everything you enter now saves automatically and is there when you come back —
-   on any device.
-
-That's the whole backend. No server to host, nothing to keep running, $0.
-
+Released under the MIT License.
